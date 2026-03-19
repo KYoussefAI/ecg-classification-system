@@ -24,19 +24,19 @@ End-to-end ECG classification system using deep learning.
 ecg-classification-system/
 │
 ├── api/
-│   └── api.py              # FastAPI backend (model inference)
+│   └── api.py            
 │
 ├── scripts/
-│   └── predict.py          # Local prediction script
+│   └── predict.py         
 │
-├── model/                  # (not included in repo)
+├── model/               
 │   └── ecg_full_model.pth
 │
-├── data/                   # (not included in repo)
+├── data/                 
 │   └── sample.npy
 │
-├── app.py                  # Streamlit frontend UI
-├── requirements.txt        # Python dependencies
-├── README.md               # Project documentation
-└── .gitignore              # Ignored files
+├── app.py                 
+├── requirements.txt     
+├── README.md             
+└── .gitignore           
 ```
