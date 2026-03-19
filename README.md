@@ -40,3 +40,7 @@ ecg-classification-system/
 ├── README.md             
 └── .gitignore           
 ```
+
+## Demo
+
+![ECG App Screenshot](docs/demo.png)
