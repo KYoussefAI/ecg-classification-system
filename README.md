@@ -19,3 +19,21 @@ End-to-end ECG classification system using deep learning.
 - REST API for inference
 
 ## Project Structure
+ecg-classification-system/
+│
+├── api/
+│   └── api.py              # FastAPI backend (model inference)
+│
+├── scripts/
+│   └── predict.py          # Local prediction script
+│
+├── model/                  # (not included in repo)
+│   └── ecg_full_model.pth
+│
+├── data/                   # (not included in repo)
+│   └── sample.npy
+│
+├── app.py                  # Streamlit frontend UI
+├── requirements.txt        # Python dependencies
+├── README.md               # Project documentation
+└── .gitignore              # Ignored files (data, models, env)
