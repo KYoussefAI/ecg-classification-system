@@ -58,6 +58,7 @@ ecg-app/
 
 ---
 
+<<<<<<< HEAD
 ## Model Details
 
 | Property         | Value                                    |
@@ -258,3 +259,39 @@ print(r.json())
 | Variable       | Default                    | Description         |
 |---------------|----------------------------|---------------------|
 | `VITE_API_URL` | `http://localhost:8000`   | Backend API base URL|
+=======
+![ECG App Screenshot](docs/demo.png)
+
+## Pipeline
+
+1. Load ECG signal (.npy)
+2. Preprocess signal (reshape to (12,1000))
+3. Model inference (CNN)
+4. Apply thresholds
+5. Return structured diagnosis
+6. Display results + visualization
+
+## Model Architecture
+
+- 1D CNN with residual blocks
+- Input: (12 leads, 1000 timesteps)
+- Output: 5-class multi-label classification
+- Loss: BCEWithLogitsLoss
+
+## Performance
+
+- ROC-AUC: ~0.92
+- Macro F1-score: ~0.75
+
+## Data
+
+- Dataset: PTB-XL
+- Format: WFDB → NumPy
+- Shape: (1000, 12)
+- Multi-label classification
+
+## Quick Start
+
+uvicorn api.api:app --reload  
+streamlit run app.py
+>>>>>>> fe497d48a92ce26dbc0297eb3106d2963be44b1b
