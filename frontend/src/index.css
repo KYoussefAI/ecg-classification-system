@@ -1,0 +1,135 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --bg-primary:   #0a0f1e;
+    --bg-card:      #0d1529;
+    --bg-elevated:  #111d35;
+    --border:       rgba(59, 130, 246, 0.15);
+    --text-primary: #e8f0fe;
+    --text-muted:   #6b7db3;
+    --accent:       #3b82f6;
+    --accent-glow:  rgba(59, 130, 246, 0.3);
+  }
+
+  * { box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    @apply bg-[#0a0f1e] text-[#e8f0fe];
+    font-family: 'Space Grotesk', sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* custom scrollbar */
+  ::-webkit-scrollbar       { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: #0a0f1e; }
+  ::-webkit-scrollbar-thumb { background: #1e3a6e; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #2563eb; }
+}
+
+@layer components {
+  /* ── Cards ── */
+  .card {
+    @apply rounded-2xl border bg-[#0d1529] border-blue-900/30 p-6;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+  }
+  .card-glow {
+    box-shadow: 0 0 0 1px rgba(59,130,246,0.2), 0 8px 32px rgba(0,0,0,0.5);
+  }
+
+  /* ── Buttons ── */
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl
+           font-semibold text-white bg-blue-600 hover:bg-blue-500
+           transition-all duration-200 active:scale-95 disabled:opacity-50
+           disabled:cursor-not-allowed;
+    box-shadow: 0 0 20px rgba(59,130,246,0.25);
+  }
+  .btn-primary:hover:not(:disabled) {
+    box-shadow: 0 0 28px rgba(59,130,246,0.45);
+  }
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl
+           font-medium text-blue-300 hover:bg-blue-900/30 transition-all duration-200;
+  }
+  .btn-danger {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl
+           font-medium text-red-400 hover:bg-red-900/20 transition-all duration-200;
+  }
+
+  /* ── Form inputs ── */
+  .input {
+    @apply w-full px-4 py-3 rounded-xl border border-blue-900/40 bg-[#111d35]
+           text-[#e8f0fe] placeholder-[#3a4f7a]
+           focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50
+           transition-all duration-200;
+  }
+  .label {
+    @apply block text-sm font-medium text-blue-300 mb-1.5;
+  }
+
+  /* ── Badges ── */
+  .badge {
+    @apply inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold;
+  }
+  .badge-positive { @apply badge bg-red-900/40 text-red-300 border border-red-700/30; }
+  .badge-normal   { @apply badge bg-green-900/40 text-green-300 border border-green-700/30; }
+  .badge-neutral  { @apply badge bg-blue-900/40 text-blue-300 border border-blue-700/30; }
+
+  /* ── ECG grid background ── */
+  .ecg-grid {
+    background-image:
+      linear-gradient(rgba(59,130,246,0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(59,130,246,0.04) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+
+  /* ── Sidebar nav item ── */
+  .nav-item {
+    @apply flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium
+           text-blue-300/70 hover:text-blue-100 hover:bg-blue-900/25 transition-all duration-200 cursor-pointer;
+  }
+  .nav-item.active {
+    @apply text-blue-100 bg-blue-600/20 border border-blue-500/20;
+  }
+
+  /* ── Stat card ── */
+  .stat-card {
+    @apply card flex flex-col gap-1;
+  }
+}
+
+/* ── ECG Waveform Animation ── */
+@keyframes ecgDraw {
+  0%   { stroke-dashoffset: 600; }
+  100% { stroke-dashoffset: 0;   }
+}
+.ecg-animate {
+  stroke-dasharray: 600;
+  stroke-dashoffset: 600;
+  animation: ecgDraw 2.5s ease-in-out infinite;
+}
+
+/* ── Shimmer skeleton ── */
+@keyframes shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position:  400px 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, #111d35 25%, #1a2d50 50%, #111d35 75%);
+  background-size: 800px 100%;
+  animation: shimmer 1.4s infinite;
+  border-radius: 8px;
+}
+
+/* ── Progress bar ── */
+.progress-bar {
+  @apply h-2 rounded-full bg-blue-900/40 overflow-hidden;
+}
+.progress-fill {
+  @apply h-full rounded-full transition-all duration-700;
+}

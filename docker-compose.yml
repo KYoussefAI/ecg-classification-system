@@ -1,0 +1,34 @@
+version: "3.9"
+
+services:
+  backend:
+    build: ./backend
+    container_name: cardioscan-api
+    ports:
+      - "8000:8000"
+    environment:
+      - SECRET_KEY=change-me-in-production
+      - DB_PATH=/data/cardioscan.db
+      - MODEL_PATH=/app/app/model/ecg_full_model.pth
+    volumes:
+      - db_data:/data
+      - ./backend/app/model:/app/app/model   # mount your .pth here
+    restart: unless-stopped
+
+  frontend:
+    image: node:20-alpine
+    container_name: cardioscan-ui
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    command: sh -c "npm install && npm run dev -- --host"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  db_data:

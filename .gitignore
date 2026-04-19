@@ -1,9 +1,61 @@
-ecg_env/
-
+# =========================
+# PYTHON
+# =========================
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
 
-data/
-*.npy
+# Virtual environments
+clean_env/
+.venv/
+env/
 
+# =========================
+# MODEL FILES (VERY IMPORTANT)
+# =========================
 *.pth
+*.pt
+model/
+
+# =========================
+# DATA FILES
+# =========================
+*.npy
+*.csv
+*.zip
+*.rar
+
+# Optional test data (keep only if useful)
+test_json/
+
+# =========================
+# FRONTEND (NODE)
+# =========================
+node_modules/
+dist/
+build/
+
+# =========================
+# ENV / SECRETS
+# =========================
+.env
+*.env
+
+# =========================
+# DATABASE
+# =========================
+*.db
+*.sqlite3
+
+# =========================
+# IDE / OS
+# =========================
+.vscode/
+.DS_Store
+Thumbs.db
+
+# =========================
+# MISC
+# =========================
+*.log
