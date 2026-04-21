@@ -1,297 +1,343 @@
-# 🫀 CardioScan — AI ECG Analysis Platform
+# CardioScan — Plateforme d'Analyse ECG par Intelligence Artificielle
 
-A full-stack web application for 12-lead ECG multi-label cardiac classification,
-built on top of the PTB-XL notebook. Uses a deep 1D-ResNet trained to detect
-5 diagnostic superclasses.
+Application web full-stack de classification multi-labels d'ECG 12 dérivations, basée sur un réseau de neurones résiduel 1D entraîné sur le jeu de données PTB-XL.
 
 ---
 
-## Architecture
+## Auteurs
+
+Projet réalisé par **Youssef Khaloufi** et **Ayoub Bourti**, sous la direction du **Pr. Mostafa Ezziyyani**.
+
+---
+
+## Table des matières
+
+- [Aperçu](#aperçu)
+- [Architecture du projet](#architecture-du-projet)
+- [Modèle de deep learning](#modèle-de-deep-learning)
+- [Prérequis](#prérequis)
+- [Installation et démarrage rapide](#installation-et-démarrage-rapide)
+- [Démarrage avec Docker](#démarrage-avec-docker)
+- [Référence API](#référence-api)
+- [Export de signal depuis Python](#export-de-signal-depuis-python)
+- [Variables d'environnement](#variables-denvironnement)
+- [Suggestions de déploiement](#suggestions-de-déploiement)
+- [Licence](#licence)
+
+---
+
+## Aperçu
+
+CardioScan est une application médicale basée sur l'IA permettant l'analyse automatique de signaux ECG à 12 dérivations. Le système classifie les enregistrements en **5 superclasses diagnostiques** avec des seuils de décision optimisés, et expose les résultats via une interface web moderne et une API REST sécurisée.
+
+Fonctionnalités principales :
+
+- **Modèle ResNet 1D** entraîné sur 21 799 enregistrements (PTB-XL)
+- **Authentification JWT** avec gestion des utilisateurs (inscription / connexion)
+- **Dashboard interactif** avec métriques du modèle et visualisations
+- **Historique des analyses** par utilisateur (consultation et suppression)
+- **Déploiement Docker** clé en main via `docker-compose`
+- **Documentation API** auto-générée avec Swagger UI (`/docs`)
+
+---
+
+## Architecture du projet
 
 ```
-ecg-app/
-├── backend/                  # FastAPI Python API
+ecg-classification-system/
+│
+├── backend/                        # API Python — FastAPI
 │   ├── app/
-│   │   ├── main.py           # App entry point + CORS
-│   │   ├── database.py       # Async SQLite setup
-│   │   ├── dependencies.py   # JWT auth dependency
+│   │   ├── main.py                 # Point d'entrée + configuration CORS
+│   │   ├── database.py             # Base de données SQLite asynchrone
+│   │   ├── dependencies.py         # Dépendance d'authentification JWT
 │   │   ├── models/
-│   │   │   └── ecg_model.py  # ECGNet + ResidualBlock (PyTorch)
+│   │   │   └── ecg_model.py        # Architecture ECGNet + ResidualBlock (PyTorch)
 │   │   ├── services/
-│   │   │   ├── model_service.py  # Singleton inference engine
-│   │   │   └── auth_service.py   # bcrypt + JWT helpers
+│   │   │   ├── model_service.py    # Moteur d'inférence (singleton)
+│   │   │   └── auth_service.py     # Helpers bcrypt + JWT
 │   │   ├── schemas/
-│   │   │   └── schemas.py    # Pydantic request/response models
+│   │   │   └── schemas.py          # Modèles Pydantic (requêtes / réponses)
 │   │   ├── routes/
-│   │   │   ├── auth.py       # POST /api/auth/register|login
-│   │   │   ├── predict.py    # POST /api/predict/
-│   │   │   ├── history.py    # GET|DELETE /api/history/
-│   │   │   └── stats.py      # GET /api/stats/
+│   │   │   ├── auth.py             # POST /api/auth/register | /login
+│   │   │   ├── predict.py          # POST /api/predict/
+│   │   │   ├── history.py          # GET | DELETE /api/history/
+│   │   │   └── stats.py            # GET /api/stats/
 │   │   └── model/
-│   │       └── ecg_full_model.pth   ← place your checkpoint here
+│   │       └── ecg_full_model.pth  # Placer le checkpoint ici
 │   ├── requirements.txt
 │   └── Dockerfile
 │
-├── frontend/                 # React + Vite + TailwindCSS
+├── frontend/                       # React + Vite + TailwindCSS
 │   ├── src/
-│   │   ├── App.jsx           # Router setup
-│   │   ├── main.jsx          # Entry point
-│   │   ├── index.css         # Global styles + Tailwind
-│   │   ├── utils/api.js      # Axios client + all API calls
-│   │   ├── hooks/useAuth.jsx  # Auth context
+│   │   ├── App.jsx                 # Configuration du routeur
+│   │   ├── main.jsx                # Point d'entrée
+│   │   ├── index.css               # Styles globaux + Tailwind
+│   │   ├── utils/api.js            # Client Axios + tous les appels API
+│   │   ├── hooks/useAuth.jsx       # Contexte d'authentification
 │   │   ├── components/
-│   │   │   ├── Layout.jsx    # Sidebar + outlet
-│   │   │   └── ResultCard.jsx # Prediction result display
+│   │   │   ├── Layout.jsx          # Sidebar + outlet
+│   │   │   └── ResultCard.jsx      # Affichage des résultats de prédiction
 │   │   └── pages/
-│   │       ├── HomePage.jsx   # Landing page
-│   │       ├── LoginPage.jsx
-│   │       ├── RegisterPage.jsx
-│   │       ├── PredictPage.jsx  # Main analysis form
-│   │       ├── DashboardPage.jsx # Charts + model metrics
-│   │       └── HistoryPage.jsx  # Prediction history table
+│   │       ├── HomePage.jsx        # Page d'accueil
+│   │       ├── LoginPage.jsx       # Connexion
+│   │       ├── RegisterPage.jsx    # Inscription
+│   │       ├── PredictPage.jsx     # Formulaire d'analyse principal
+│   │       ├── DashboardPage.jsx   # Graphiques + métriques du modèle
+│   │       └── HistoryPage.jsx     # Tableau de l'historique
 │   ├── package.json
 │   ├── vite.config.js
 │   └── tailwind.config.js
 │
-└── docker-compose.yml
+├── notebooks/                      # Notebooks Jupyter d'entraînement
+├── data_sample/                    # Exemples de signaux ECG
+├── api/                            # Version Streamlit (legacy)
+├── test/                           # Tests
+├── app.py                          # Application Streamlit standalone
+├── docker-compose.yml
+├── requirements.txt
+└── sample.json                     # Exemple de payload JSON
 ```
 
 ---
 
-<<<<<<< HEAD
-## Model Details
+## Modèle de deep learning
 
-| Property         | Value                                    |
-|-----------------|------------------------------------------|
-| Dataset          | PTB-XL (21,799 records)                  |
-| Input            | 12-lead ECG, 1000 timesteps @ 100 Hz     |
-| Architecture     | 3× 1D ResidualBlock (12→64→128→256)      |
-| Classifier       | Linear(256,128) → ReLU → Dropout → Linear(128,5) |
-| Loss             | Focal Loss + pos_weight for imbalance    |
-| Sampler          | WeightedRandomSampler                    |
-| Epochs           | 10                                       |
-| Macro AUC        | **0.917**                                |
-| NORM AUC         | 0.938 · MI AUC: 0.927 · CD AUC: 0.897  |
+### Caractéristiques techniques
 
-### Classes
+| Propriété             | Valeur                                              |
+|-----------------------|-----------------------------------------------------|
+| Jeu de données        | PTB-XL (21 799 enregistrements)                     |
+| Entrée                | ECG 12 dérivations, 1 000 pas de temps @ 100 Hz     |
+| Architecture          | 3x ResidualBlock 1D (12 -> 64 -> 128 -> 256 canaux) |
+| Classifieur           | `Linear(256,128) -> ReLU -> Dropout -> Linear(128,5)` |
+| Fonction de perte     | Focal Loss + `pos_weight` pour le déséquilibre      |
+| Echantillonnage       | `WeightedRandomSampler`                             |
+| Epoques               | 10                                                  |
+| Macro AUC             | **0.917**                                           |
 
-| Code  | Full Name                  | Threshold |
-|-------|----------------------------|-----------|
-| NORM  | Normal ECG                 | 0.55      |
-| MI    | Myocardial Infarction      | 0.45      |
-| CD    | Conduction Disturbance     | 0.70      |
-| HYP   | Hypertrophy                | 0.65      |
-| STTC  | ST/T-Change                | 0.65      |
+### Classes diagnostiques
+
+| Code   | Nom complet                  | Seuil de décision |
+|--------|------------------------------|:-----------------:|
+| NORM   | ECG Normal                   | 0.55              |
+| MI     | Infarctus du Myocarde        | 0.45              |
+| CD     | Trouble de la Conduction     | 0.70              |
+| HYP    | Hypertrophie                 | 0.65              |
+| STTC   | Modification ST/T            | 0.65              |
+
+### Performances détaillées
+
+| Classe        | AUC       |
+|---------------|-----------|
+| NORM          | 0.938     |
+| MI            | 0.927     |
+| CD            | 0.897     |
+| **Macro AUC** | **0.917** |
+| **Macro F1**  | **~0.75** |
 
 ---
 
-## Quick Start (Local)
+## Prérequis
 
-### 1. Backend
+- Python >= 3.9
+- Node.js >= 18
+- Docker et Docker Compose (pour le démarrage conteneurisé)
+- Checkpoint du modèle : `ecg_full_model.pth`
+
+> Sans checkpoint, l'API fonctionne en mode démo avec des poids aléatoires — tous les endpoints restent disponibles mais les prédictions sont aléatoires.
+
+---
+
+## Installation et démarrage rapide
+
+### 1. Backend (FastAPI)
 
 ```bash
 cd backend
 
-# Create virtual environment
+# Créer et activer l'environnement virtuel
 python -m venv venv
-source venv/bin/activate        # Windows: venv\Scripts\activate
+source venv/bin/activate        # Windows : venv\Scripts\activate
 
-# Install dependencies
+# Installer les dépendances
 pip install -r requirements.txt
 
-# Copy your trained model checkpoint
-cp /path/to/ecg_full_model.pth app/model/ecg_full_model.pth
+# Copier le checkpoint du modèle entraîné
+cp /chemin/vers/ecg_full_model.pth app/model/ecg_full_model.pth
 
-# Run API (auto-reloads on changes)
+# Lancer l'API (rechargement automatique activé)
 uvicorn app.main:app --reload --port 8000
 ```
 
-The API will be available at **http://localhost:8000**
-Interactive docs at **http://localhost:8000/docs**
+API disponible sur : `http://localhost:8000`  
+Documentation interactive : `http://localhost:8000/docs`
 
-> **No model checkpoint?** The API runs in demo mode with random weights — all endpoints work but predictions are random.
-
-### 2. Frontend
+### 2. Frontend (React + Vite)
 
 ```bash
 cd frontend
 
-# Install packages
+# Installer les paquets
 npm install
 
-# Start dev server
+# Lancer le serveur de développement
 npm run dev
 ```
 
-The app will be at **http://localhost:5173**
+Application disponible sur : `http://localhost:5173`
 
 ---
 
-## Docker Compose (Recommended)
+## Démarrage avec Docker
 
 ```bash
-# From project root
-cp your_model.pth backend/app/model/ecg_full_model.pth
+# Depuis la racine du projet
+cp votre_modele.pth backend/app/model/ecg_full_model.pth
 
 docker-compose up --build
 ```
 
-- Frontend: http://localhost:5173
-- Backend:  http://localhost:8000
+| Service   | URL                         |
+|-----------|-----------------------------|
+| Frontend  | http://localhost:5173       |
+| Backend   | http://localhost:8000       |
+| API Docs  | http://localhost:8000/docs  |
 
 ---
 
-## API Reference
+## Référence API
 
-### Authentication
+### Authentification
 
 ```bash
-# Register
+# Inscription
 curl -X POST http://localhost:8000/api/auth/register \
   -H "Content-Type: application/json" \
   -d '{"username":"demo","email":"demo@example.com","password":"secret123"}'
 
-# Login
+# Connexion
 curl -X POST http://localhost:8000/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"username":"demo","password":"secret123"}'
 ```
 
-### Prediction
+### Prédiction
 
 ```bash
-# Generate a test signal (Python)
+# Générer un signal de test (Python)
 python3 -c "
 import numpy as np, json
 sig = np.random.randn(1000, 12).tolist()
-print(json.dumps({'signal_data': sig, 'patient_name': 'Test Patient', 'age': 55, 'sex': 'M'}))
+print(json.dumps({'signal_data': sig, 'patient_name': 'Patient Test', 'age': 55, 'sex': 'M'}))
 " > test_payload.json
 
-# Run prediction (no auth required for basic prediction)
+# Lancer une prédiction
 curl -X POST http://localhost:8000/api/predict/ \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Authorization: Bearer VOTRE_TOKEN" \
   -d @test_payload.json
 ```
 
-**Response:**
+Exemple de réponse :
+
 ```json
 {
   "id": 1,
   "predictions": [
-    {"class": "NORM", "description": "Normal ECG",            "probability": 0.92, "positive": true},
-    {"class": "MI",   "description": "Myocardial Infarction", "probability": 0.08, "positive": false},
-    ...
+    {"class": "NORM", "description": "ECG Normal",             "probability": 0.92, "positive": true},
+    {"class": "MI",   "description": "Infarctus du Myocarde", "probability": 0.08, "positive": false},
+    {"class": "CD",   "description": "Trouble de Conduction", "probability": 0.03, "positive": false},
+    {"class": "HYP",  "description": "Hypertrophie",          "probability": 0.11, "positive": false},
+    {"class": "STTC", "description": "Modification ST/T",     "probability": 0.07, "positive": false}
   ],
   "top_class": "NORM",
   "confidence": 0.92,
   "positive_classes": ["NORM"],
-  "patient_name": "Test Patient",
+  "patient_name": "Patient Test",
   "age": 55,
   "sex": "M"
 }
 ```
 
-### History & Stats (require auth)
+### Historique et statistiques (authentification requise)
 
 ```bash
-TOKEN="your_jwt_token"
+TOKEN="votre_token_jwt"
 
-# Get history
+# Récupérer l'historique
 curl http://localhost:8000/api/history/ -H "Authorization: Bearer $TOKEN"
 
-# Get stats
+# Récupérer les statistiques
 curl http://localhost:8000/api/stats/ -H "Authorization: Bearer $TOKEN"
 
-# Delete a record
+# Supprimer un enregistrement
 curl -X DELETE http://localhost:8000/api/history/1 -H "Authorization: Bearer $TOKEN"
 ```
 
 ---
 
-## Exporting Your Signal for the API
-
-From the notebook / Python:
+## Export de signal depuis Python
 
 ```python
-import numpy as np, json
+import numpy as np, json, requests
 
-# X_test[0] has shape (1000, 12)
-signal = X_test[0]   # numpy array
+# X_test[0] a la forme (1000, 12)
+signal = X_test[0]  # tableau numpy issu du notebook
 
-# Method 1: save as JSON for the frontend file uploader
+# Méthode 1 : sauvegarder en JSON pour l'uploader frontend
 with open("sample_signal.json", "w") as f:
     json.dump(signal.tolist(), f)
 
-# Method 2: POST directly from Python
-import requests
+# Méthode 2 : envoyer directement via POST
 r = requests.post(
     "http://localhost:8000/api/predict/",
-    json={"signal_data": signal.tolist(), "patient_name": "Patient A"},
-    headers={"Authorization": "Bearer YOUR_TOKEN"}
+    json={
+        "signal_data": signal.tolist(),
+        "patient_name": "Patient A",
+        "age": 62,
+        "sex": "F"
+    },
+    headers={"Authorization": "Bearer VOTRE_TOKEN"}
 )
 print(r.json())
 ```
 
 ---
 
-## Deployment Suggestions
+## Variables d'environnement
 
-| Service  | Notes                                               |
-|----------|-----------------------------------------------------|
-| **Render** | Deploy backend as a Web Service (Docker). Free tier available. |
-| **Railway** | `railway up` from backend folder. Auto-detects Dockerfile. |
-| **Vercel** | Deploy the `frontend/` folder. Set `VITE_API_URL` env var. |
-| **Fly.io** | Good for the PyTorch backend — persistent disk for DB + model. |
+### Backend
+
+| Variable     | Valeur par défaut              | Description                |
+|--------------|--------------------------------|----------------------------|
+| `SECRET_KEY` | `change-me-in-production-...`  | Clé de signature JWT       |
+| `DB_PATH`    | `cardioscan.db`                | Chemin vers la base SQLite |
+| `MODEL_PATH` | `app/model/ecg_full_model.pth` | Chemin vers le checkpoint  |
+
+### Frontend
+
+| Variable       | Valeur par défaut       | Description              |
+|----------------|-------------------------|--------------------------|
+| `VITE_API_URL` | `http://localhost:8000` | URL de base de l'API     |
 
 ---
 
-## Environment Variables
+## Suggestions de déploiement
 
-### Backend
-| Variable     | Default                      | Description                    |
-|-------------|------------------------------|--------------------------------|
-| `SECRET_KEY` | `change-me-in-production-...`| JWT signing secret             |
-| `DB_PATH`    | `cardioscan.db`              | SQLite database file path      |
-| `MODEL_PATH` | `app/model/ecg_full_model.pth`| PyTorch checkpoint path       |
+| Service     | Notes                                                                  |
+|-------------|------------------------------------------------------------------------|
+| **Render**  | Déployer le backend comme Web Service Docker. Tier gratuit disponible. |
+| **Railway** | `railway up` depuis le dossier backend. Détecte le Dockerfile auto.   |
+| **Vercel**  | Déployer le dossier `frontend/`. Configurer `VITE_API_URL`.           |
+| **Fly.io**  | Idéal pour le backend PyTorch — disque persistant pour DB + modèle.   |
 
-### Frontend
-| Variable       | Default                    | Description         |
-|---------------|----------------------------|---------------------|
-| `VITE_API_URL` | `http://localhost:8000`   | Backend API base URL|
-=======
-![ECG App Screenshot](docs/demo.png)
+---
 
-## Pipeline
+## Licence
 
-1. Load ECG signal (.npy)
-2. Preprocess signal (reshape to (12,1000))
-3. Model inference (CNN)
-4. Apply thresholds
-5. Return structured diagnosis
-6. Display results + visualization
+Ce projet est distribué sous licence libre. Consultez le fichier [LICENSE.txt](./LICENSE.txt) pour plus de détails.
 
-## Model Architecture
+---
 
-- 1D CNN with residual blocks
-- Input: (12 leads, 1000 timesteps)
-- Output: 5-class multi-label classification
-- Loss: BCEWithLogitsLoss
-
-## Performance
-
-- ROC-AUC: ~0.92
-- Macro F1-score: ~0.75
-
-## Data
-
-- Dataset: PTB-XL
-- Format: WFDB → NumPy
-- Shape: (1000, 12)
-- Multi-label classification
-
-## Quick Start
-
-uvicorn api.api:app --reload  
-streamlit run app.py
->>>>>>> fe497d48a92ce26dbc0297eb3106d2963be44b1b
+> **Avertissement :** Cet outil est destiné à des fins de recherche et d'aide à la décision. Il ne remplace pas le diagnostic d'un professionnel de santé qualifié.
