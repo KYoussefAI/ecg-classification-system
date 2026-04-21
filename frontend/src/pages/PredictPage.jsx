@@ -42,7 +42,7 @@ export default function PredictPage() {
   const [error,   setError]   = useState('')
   const fileRef = useRef()
 
-  /* Parse uploaded .npy-like JSON or raw JSON array */
+  /* Parse JSON: raw 2-D array, or { "signal_data": [...] } (export style) */
   const handleFile = async (e) => {
     const file = e.target.files[0]
     if (!file) return
@@ -53,7 +53,13 @@ export default function PredictPage() {
     try {
       const text = await file.text()
       const data = JSON.parse(text)
-      setSignal(data)
+      const rows = Array.isArray(data) ? data : data?.signal_data
+      if (!rows || !Array.isArray(rows)) {
+        setError('JSON must be a 2-D array or an object with a "signal_data" array.')
+        setSignal(null)
+        return
+      }
+      setSignal(rows)
     } catch {
       setError('Could not parse file. Please upload a JSON file containing the signal array.')
       setSignal(null)
@@ -69,26 +75,40 @@ export default function PredictPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!signal) { setError('Please upload a signal or use the demo.'); return }
+
+    if (!signal) {
+      setError('Please upload a signal or use the demo.')
+      return
+    }
+
     setError('')
     setLoading(true)
     setResult(null)
 
+    const ageNum = form.age === '' ? null : Number(form.age)
+    const payload = {
+      signal_data: signal,
+      ...(form.patientName.trim() ? { patient_name: form.patientName.trim() } : {}),
+      ...(ageNum !== null && !Number.isNaN(ageNum) ? { age: ageNum } : {}),
+      ...(form.sex ? { sex: form.sex } : {}),
+    }
+
     try {
-      const res = await predictAPI.predict({
-        signal_data:  signal,
-        patient_name: form.patientName || null,
-        age:          form.age         ? parseInt(form.age) : null,
-        sex:          form.sex         || null,
-      })
-      setResult(res.data)
+      const { data } = await predictAPI.predict(payload)
+      setResult(data)
     } catch (err) {
-      setError(err.response?.data?.detail || 'Prediction failed. Please try again.')
+      const d = err.response?.data?.detail
+      if (typeof d === 'string') {
+        setError(d)
+      } else if (Array.isArray(d)) {
+        setError(d.map((x) => x.msg || JSON.stringify(x)).join(' · '))
+      } else {
+        setError(err.message || 'Prediction failed. Is the API running?')
+      }
     } finally {
       setLoading(false)
     }
   }
-
   return (
     <div className="p-8 max-w-3xl mx-auto animate-fade-in">
 

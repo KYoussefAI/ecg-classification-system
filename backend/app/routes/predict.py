@@ -9,9 +9,8 @@ POST /api/predict
 import json
 import logging
 import numpy as np
-import io
 
-from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
+from fastapi import APIRouter, HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from app.database import get_db
@@ -78,6 +77,10 @@ async def predict(
             if user_row:
                 user_id = user_row["id"]
 
+    patient_name = body.patient_name
+    age = body.age
+    sex = body.sex
+
     # ---- save prediction ----
     cursor = await db.execute(
         """
@@ -87,9 +90,9 @@ async def predict(
         """,
         (
             user_id,
-            None,
-            None,
-            None,
+            patient_name,
+            age,
+            sex,
             str(signal.shape),
             json.dumps(result["predictions"]),
             result["top_class"],
@@ -108,8 +111,8 @@ async def predict(
         top_class=result["top_class"],
         confidence=result["confidence"],
         positive_classes=result["positive_classes"],
-        patient_name=None,
-        age=None,
-        sex=None,
+        patient_name=patient_name,
+        age=age,
+        sex=sex,
         created_at=saved["created_at"] if saved else None,
     )

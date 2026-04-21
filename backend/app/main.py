@@ -4,6 +4,7 @@ FastAPI backend for 12-lead ECG multi-label classification
 """
 
 import logging
+import os
 from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI
@@ -26,7 +27,7 @@ async def lifespan(app: FastAPI):
     await init_db()
 
     logger.info("Loading ECG model...")
-    #ModelService.get_instance()
+    ModelService.get_instance()
 
     logger.info("Model loaded. API ready.")
     yield
@@ -41,10 +42,16 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# CORS
+# CORS — comma-separated origins in CORS_ORIGINS, or sensible dev defaults
+_cors_raw = os.getenv(
+    "CORS_ORIGINS",
+    "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000",
+)
+_allow_origins = [o.strip() for o in _cors_raw.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_origins=_allow_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
