@@ -1,583 +1,295 @@
-# CardioScan — Plateforme de Classification ECG par Intelligence Artificielle
+# CardioScan · ECG Signal Intelligence
 
-Application web full-stack de classification multi-labels d'ECG 12 dérivations, basée sur un réseau de neurones résiduel 1D entraîné sur le jeu de données PTB-XL.
+An end-to-end, AI-assisted 12-lead ECG classification research prototype built with PyTorch, PTB-XL, FastAPI and React.
 
----
+**Status: ready for a new training run; awaiting final evaluation.** No performance from the retired experiment is used by this application. A missing or incompatible model disables prediction.
 
-## Auteurs
+![CardioScan workstation — synthetic signal preview](docs/images/workstation.png)
 
-Projet réalisé par **Khaloufi Youssef** et **Bourti Ayoub**, sous la direction du **Pr. Ezziyyani Mostafa**.
+Developed by **Khaloufi Youssef** and **Bourti Ayoub**, supervised by **Pr. Ezziyyani Mostafa**.
 
----
+## 1. Overview
 
-## Table des matières
+CardioScan combines a reproducible multilabel ECG experiment with a transparent waveform workstation. Inspect twelve leads, validate an upload, view five model scores with their decision thresholds, and review the active model's provenance.
 
-- [Présentation](#présentation)
-- [Architecture du dépôt](#architecture-du-dépôt)
-- [Données — Dataset PTB-XL](#données--dataset-ptb-xl)
-- [Prétraitement et normalisation](#prétraitement-et-normalisation)
-- [Architecture du modèle](#architecture-du-modèle)
-- [Pipeline d'entraînement](#pipeline-dentraînement)
-- [Évaluation et métriques](#évaluation-et-métriques)
-- [Backend — API FastAPI](#backend--api-fastapi)
-- [Frontend — React / Vite / TailwindCSS](#frontend--react--vite--tailwindcss)
-- [Prérequis](#prérequis)
-- [Installation et démarrage rapide](#installation-et-démarrage-rapide)
-- [Démarrage avec Docker](#démarrage-avec-docker)
-- [Référence API](#référence-api)
-- [Export de signal depuis Python](#export-de-signal-depuis-python)
-- [Variables d'environnement](#variables-denvironnement)
-- [Suggestions de déploiement](#suggestions-de-déploiement)
-- [Licence](#licence)
+**Research prototype — not a medical device and not intended for clinical diagnosis or emergency decision-making.**
 
----
+## 2. Demo
 
-## Présentation
+Open `http://localhost:5173`, choose **Open ECG Workstation**, then **Load synthetic demo**. This generates an explicitly labeled illustrative signal; it is not a patient recording or a clinically validated simulator. Preview works without a model. Classification requires a trained artifact. Synthetic smoke-test artifacts are deliberately rejected by serving.
 
-CardioScan est une plateforme médicale basée sur l'IA permettant l'analyse automatique de signaux ECG à 12 dérivations. Le système classifie les enregistrements en **5 superclasses diagnostiques** avec des seuils de décision optimisés par classe, et expose les résultats via une interface web moderne et une API REST sécurisée par JWT.
+The waveform uses seconds and physical millivolts with labeled, per-lead automatic amplitude scaling. It does not claim calibrated paper speed or gain. See [PORTFOLIO.md](PORTFOLIO.md) for the recording checklist.
 
-Fonctionnalités principales :
+## 3. Why this project exists
 
-- **Modèle ResNet 1D** entraîné sur 21 799 enregistrements PTB-XL, Macro AUC = 0.917
-- **Classification multi-label** sur 5 classes : NORM, MI, CD, HYP, STTC
-- **Authentification JWT** avec gestion des utilisateurs (inscription / connexion)
-- **Dashboard interactif** avec métriques du modèle et visualisations
-- **Historique des analyses** par utilisateur (consultation et suppression)
-- **Déploiement Docker** clé en main via `docker-compose`
-- **Documentation API** auto-générée avec Swagger UI sur `/docs`
+A convincing ML application needs more than a prediction endpoint. This project makes data separation, normalization provenance, checkpoint selection, threshold selection, artifact compatibility and unavailable-model behavior inspectable. Its purpose is research and engineering demonstration, not clinical decision support.
 
----
+## 4. Architecture
 
-## Architecture du dépôt
-
-```
-ecg-classification-system/
-│
-├── backend/                        # API Python — FastAPI + PyTorch
-│   ├── app/
-│   │   ├── main.py                 # Point d'entrée, configuration CORS
-│   │   ├── database.py             # Base SQLite asynchrone (aiosqlite)
-│   │   ├── dependencies.py         # Injection de dépendance JWT
-│   │   ├── models/
-│   │   │   └── ecg_model.py        # Architecture ECGNet + ResidualBlock (PyTorch)
-│   │   ├── services/
-│   │   │   ├── model_service.py    # Singleton de chargement et inférence
-│   │   │   └── auth_service.py     # Hachage bcrypt + génération/validation JWT
-│   │   ├── schemas/
-│   │   │   └── schemas.py          # Modèles Pydantic (requêtes / réponses)
-│   │   ├── routes/
-│   │   │   ├── auth.py             # POST /api/auth/register | /login
-│   │   │   ├── predict.py          # POST /api/predict/
-│   │   │   ├── history.py          # GET | DELETE /api/history/
-│   │   │   └── stats.py            # GET /api/stats/
-│   │   └── model/
-│   │       └── ecg_full_model.pth  # Placer le checkpoint ici
-│   ├── requirements.txt
-│   └── Dockerfile
-│
-├── frontend/                       # React + Vite + TailwindCSS
-│   ├── src/
-│   │   ├── App.jsx                 # Configuration du routeur
-│   │   ├── main.jsx                # Point d'entrée
-│   │   ├── index.css               # Styles globaux + Tailwind
-│   │   ├── utils/api.js            # Client Axios centralisé + appels API
-│   │   ├── hooks/useAuth.jsx       # Provider React, gestion token/profil
-│   │   ├── components/
-│   │   │   ├── Layout.jsx          # Navigation latérale + outlet React Router
-│   │   │   └── ResultCard.jsx      # Affichage probabilités + labels par classe
-│   │   └── pages/
-│   │       ├── HomePage.jsx        # Landing page
-│   │       ├── LoginPage.jsx       # Connexion
-│   │       ├── RegisterPage.jsx    # Inscription
-│   │       ├── PredictPage.jsx     # Formulaire d'analyse principal
-│   │       ├── DashboardPage.jsx   # Graphiques + métriques du modèle
-│   │       └── HistoryPage.jsx     # Tableau de l'historique
-│   ├── package.json
-│   ├── vite.config.js
-│   └── tailwind.config.js
-│
-├── notebooks/                      # Notebooks Jupyter — entraînement du modèle
-├── data_sample/                    # Exemples de signaux ECG
-├── api/                            # Version Streamlit (legacy)
-├── test/                           # Tests
-├── app.py                          # Application Streamlit standalone
-├── docker-compose.yml
-├── requirements.txt
-└── sample.json                     # Exemple de payload JSON
+```mermaid
+flowchart LR
+  D[PTB-XL metadata + WFDB] --> T[Train folds 1–8]
+  D --> V[Validation fold 9]
+  T --> N[Train-only per-lead normalization]
+  N --> M[ResNet1D + weighted BCE]
+  V --> S[Checkpoint selection + F1 thresholds]
+  M --> S
+  S --> A[Frozen checkpoint + metadata]
+  A --> E[Separate fold-10 evaluation]
+  A --> API[FastAPI / CPU inference]
+  E --> API
+  API --> UI[React ECG workstation]
 ```
 
----
+## 5. PTB-XL dataset
 
-## Données — Dataset PTB-XL
+The project is developed for PTB-XL, approximately 21.8k clinical ECG recordings in the original release. Use **version 1.0.3**, which incorporates duplicate corrections. Counts are computed from your metadata, after removing records with no mapped diagnostic superclass; no full-dataset count is described as a training count.
 
-PTB-XL est le plus grand jeu de données clinique ECG 12 dérivations publiquement disponible, produit par la Physikalisch-Technische Bundesanstalt. Il contient 21 799 enregistrements de 10 secondes provenant de 18 885 patients au format WFDB.
+Obtain the dataset from [PhysioNet](https://physionet.org/content/ptb-xl/1.0.3/). Training needs only `ptbxl_database.csv`, `scp_statements.csv`, and the `records100/` tree with its `.hea`/`.dat` pairs. Extract them into:
 
-| Propriété | Valeur |
+```text
+data/ptb-xl/1.0.3/
+  ptbxl_database.csv
+  scp_statements.csv
+  records100/00000/00001_lr.hea
+  records100/00000/00001_lr.dat
+  ...
+```
+
+Neither the dataset nor trained weights are bundled. Raw WFDB upload through the browser is not currently supported; export its physical samples to JSON/CSV/NPY first. WFDB loading for training is supported.
+
+The official v1.0.3 metadata audit on this revision found 17,084 included training records, 2,146 validation records and 2,158 test records; 411 records had no mapped diagnostic superclass. This is a metadata audit, not a training or performance result. Reproduce it and check downloaded files with `python -m training.audit --data-dir data/ptb-xl/1.0.3 --check-files`. Only the two metadata CSVs were downloaded during repository preparation; the `records100` waveforms still need to be obtained before full training.
+
+## 6. Prediction targets
+
+The fixed class order is asserted in metadata, checkpoints and serving:
+
+| Code | Diagnostic superclass |
 |---|---|
-| Nombre d'enregistrements | 21 799 |
-| Nombre de patients | 18 885 |
-| Fréquence d'échantillonnage (LR) | 100 Hz |
-| Longueur de chaque signal | 1 000 pas de temps (10 secondes) |
-| Nombre de dérivations | 12 |
-| Forme du tenseur chargé | (21 799, 1 000, 12) |
-| Valeurs manquantes (NaN) | 0 |
+| CD | Conduction disturbance |
+| HYP | Hypertrophy |
+| MI | Myocardial infarction |
+| NORM | Normal ECG pattern |
+| STTC | ST/T change |
 
-### Distribution des classes
+These are dataset annotation targets, not diagnoses produced by the application. Diagnostic SCP code presence determines labels via `scp_statements.csv`; likelihood zero means unknown likelihood and does not erase a recorded code. Unmapped records are excluded with IDs recorded in the run audit.
 
-| Classe | Nom complet | Occurrences |
+## 7. Methodology
+
+- Verify record/path uniqueness, valid folds, patient separation and disjoint IDs before training. Hash development waveforms to reject exact duplicates; final evaluation checks test waveforms against those hashes.
+- Learn one mean and standard deviation per lead from **training folds only**. Apply the stored values through the same `training.preprocessing.preprocess` function in training and serving. No filtering or per-record normalization is applied.
+- Default loss is `BCEWithLogitsLoss`, with `pos_weight = negatives / positives` calculated from the training labels only. There is no weighted sampler or focal-loss stack.
+- Select the best checkpoint by **validation macro AUROC**; ReduceLROnPlateau and early stopping also use that quantity.
+- Reload the frozen best checkpoint, predict fold 9, and maximize each class's validation F1 over observed score thresholds. Ties select the highest threshold. Save the exact values.
+- No calibration is fitted. A single fold already serves model selection and threshold selection, so a further calibration fit would need careful assessment. Outputs are **uncalibrated model scores**, not clinically calibrated disease probabilities. Fold-9 threshold metrics are not unbiased generalization estimates.
+
+Training retains all labeled records with valid shape, units and finite samples, including dataset quality variation. Serving adds a conservative rejection gate for near-flat leads (standard deviation below `1e-5 mV`) and values outside ±100 mV. This gate is a basic engineering check, not a clinically validated quality score; it does not alter accepted waveforms. Final benchmark metrics cover the full included test partition, not only the serving quality gate's accepted subset.
+
+## 8. Official train / validation / test split
+
+| Partition | `strat_fold` | Permitted use |
 |---|---|---|
-| NORM | ECG Normal | 9 514 |
-| MI | Infarctus du Myocarde | 5 469 |
-| STTC | Modification ST/T | 5 235 |
-| CD | Trouble de la Conduction | 4 898 |
-| HYP | Hypertrophie | 2 649 |
+| Train | 1–8 | Weights, normalization statistics, class weights |
+| Validation | 9 | Checkpoint selection, scheduler, early stopping, thresholds |
+| Final test | 10 | One evaluation after all decisions are frozen |
 
-La classe NORM est surreprésentée (~44 % des enregistrements), tandis que HYP est la plus rare (~12 %). Ce déséquilibre est traité explicitement lors de l'entraînement.
+This follows the [official patient-separated protocol](https://physionet.org/content/ptb-xl/1.0.3/). Training reads test metadata for separation audits but **never loads test waveforms or uses test outcomes for fitting or tuning**. After final evaluation, do not change architecture, preprocessing, hyperparameters or thresholds in response to test results and then claim a fresh untouched evaluation.
 
-### Découpage train / test
+## 9. Model architecture
 
-Le champ `strat_fold` (1 à 10) permet une validation croisée stratifiée. Le fold 10 est utilisé comme ensemble de test.
+`training/model.py` is the single model implementation: a 15-sample stem convolution with stride 2, max pooling, four residual stages (64 → 128 → 256 → 512), two blocks per stage, kernel-7 convolutions, progressive stride-2 downsampling, BatchNorm and ReLU. Projection shortcuts handle width/stride changes. Adaptive pooling, dropout and a five-logit linear head complete the model.
 
-| Ensemble | Taille | Forme du tenseur |
-|---|---|---|
-| Entraînement (folds 1–9) | 19 601 enregistrements | (19 601, 1 000, 12) |
-| Test (fold 10) | 2 198 enregistrements | (2 198, 1 000, 12) |
+The default theoretical receptive field before global pooling spans 1,291 input samples (the input has 1,000); the retired six-convolution stride-1 model spanned only 13. This is an architectural change, not a claim of improved measured performance. Configuration is serialized with each checkpoint. CPU inference defaults to four PyTorch threads.
 
----
+## 10. Training
 
-## Prétraitement et normalisation
+Run every Python command from the repository root. Python **3.12** is the tested version. First install dependencies as described in Local setup and obtain the dataset above.
 
-Chaque enregistrement subit trois étapes avant d'alimenter le réseau.
-
-**1. Chargement WFDB avec cache**  
-Les signaux bruts sont lus via `wfdb.rdsamp()`. Un cache `X.npy` évite de recharger 21 799 enregistrements à chaque exécution.
-
-**2. Normalisation par enregistrement**  
-Chaque signal est standardisé indépendamment : soustraction de la moyenne, division par l'écart-type (+ ε = 1e-8 pour la stabilité numérique). Le modèle devient ainsi insensible aux variations d'amplitude absolue entre patients ou équipements.
-
-```python
-def normalize(signal):
-    return (signal - np.mean(signal)) / (np.std(signal) + 1e-8)
-
-X = np.array([normalize(x) for x in X])
+```powershell
+python -m training.train --data-dir data/ptb-xl/1.0.3 --run-dir artifacts/ptbxl-resnet1d-v1 --dataset-version 1.0.3 --seed 42 --epochs 60 --batch-size 64 --learning-rate 0.001 --weight-decay 0.0001 --dropout 0.3 --workers 0 --scheduler plateau --patience 10 --device auto
 ```
 
-**3. Transposition et mise en forme**  
-Le format de stockage PTB-XL est `(1 000, 12)` — temps × dérivations. Le modèle 1D-CNN attend `(12, 1 000)` — canaux × temps. La transposition est réalisée par `x.permute(0, 2, 1)` dans la boucle d'entraînement.
+CUDA is used automatically if the installed PyTorch build and hardware support it; AMP is enabled only on CUDA. `--no-amp` disables it. For a CUDA wheel, follow the [official PyTorch installer](https://pytorch.org/get-started/locally/) for your hardware, preserving the pinned PyTorch version. The default environment may have a CPU-only wheel; `--device cuda` fails clearly if unavailable.
 
----
+Run `python -m training.train --help` for all options. CPU training is supported but a full run may be slow. `--threads` controls CPU parallelism. Windows defaults to `--workers 0` to avoid process-spawn overhead; increase after checking available RAM. Approximately 1 GB of waveform arrays is retained during training, plus model/optimizer memory and worker overhead.
 
-## Architecture du modèle
+An interrupted run can resume with the **same command plus `--resume`**. The optimizer, scheduler, scaler, history and RNG states are restored from `last_checkpoint.pt`; the configuration and data fingerprints must match. `--epochs` can be increased while resuming an unfinished run. Once `model_metadata.json` exists, the run is frozen and cannot resume or be overwritten. Use a new run directory for a new experiment, and update `MODEL_DIR` explicitly.
 
-### Vue d'ensemble
+## 11. Evaluation
 
-| Couche / Composant | Entrée | Sortie | Paramètres |
-|---|---|---|---|
-| ResidualBlock 1 | (B, 12, 1000) | (B, 64, 1000) | in=12, out=64 |
-| ResidualBlock 2 | (B, 64, 1000) | (B, 128, 1000) | in=64, out=128 |
-| ResidualBlock 3 | (B, 128, 1000) | (B, 256, 1000) | in=128, out=256 |
-| AdaptiveAvgPool1d | (B, 256, 1000) | (B, 256, 1) | output_size=1 |
-| Linear | (B, 256) | (B, 128) | — |
-| ReLU + Dropout(0.3) | (B, 128) | (B, 128) | p=0.3 |
-| Linear (sortie) | (B, 128) | (B, 5) | 5 classes |
+Only after all choices are final:
 
-Le pooling adaptatif global rend l'architecture indépendante de la longueur temporelle en entrée.
-
-### Bloc résiduel (ResidualBlock)
-
-Chaque bloc contient deux convolutions 1D avec BatchNorm et ReLU, ainsi qu'une connexion de raccourci (shortcut) qui projette les dimensions si nécessaire.
-
-```python
-class ResidualBlock(nn.Module):
-    def __init__(self, in_channels, out_channels):
-        super().__init__()
-        self.conv1 = nn.Conv1d(in_channels, out_channels, kernel_size=3, padding=1)
-        self.bn1   = nn.BatchNorm1d(out_channels)
-        self.conv2 = nn.Conv1d(out_channels, out_channels, kernel_size=3, padding=1)
-        self.bn2   = nn.BatchNorm1d(out_channels)
-        self.relu  = nn.ReLU()
-        self.shortcut = nn.Sequential()
-        if in_channels != out_channels:
-            self.shortcut = nn.Sequential(
-                nn.Conv1d(in_channels, out_channels, kernel_size=1),
-                nn.BatchNorm1d(out_channels)
-            )
-
-    def forward(self, x):
-        identity = self.shortcut(x)
-        out = self.relu(self.bn1(self.conv1(x)))
-        out = self.bn2(self.conv2(out))
-        return self.relu(out + identity)
+```powershell
+python -m training.evaluate --data-dir data/ptb-xl/1.0.3 --run-dir artifacts/ptbxl-resnet1d-v1 --device cpu --batch-size 64 --bootstrap 1000
 ```
 
-### Fonction de perte — Focal Loss
+This command performs no fitting. It uses the frozen checkpoint, stored training normalization and validation thresholds. An evaluation-start marker records test access. Existing results cannot be overwritten. If evaluation fails, inspect the cause; `--retry-failed` permits completion of that same frozen evaluation after a technical failure. Do not use it for tuning.
 
-La Focal Loss réduit la contribution des exemples faciles et concentre l'apprentissage sur les cas difficiles, particulièrement utile pour les classes sous-représentées comme HYP.
+Reports include macro/micro/per-class AUROC and AUPRC (average precision), macro/micro F1, per-class precision, sensitivity, specificity, F1, support and thresholds. Undefined metrics serialize as `null`. Optional 95% AUROC intervals resample **patients**, preserving correlated repeated recordings; the intervals condition on the trained model, not training variability. `--bootstrap 0` skips intervals.
 
-```python
-class FocalLoss(nn.Module):
-    def __init__(self, pos_weight=None, gamma=2):
-        super().__init__()
-        self.pos_weight = pos_weight
-        self.gamma = gamma
+## 12. Results
 
-    def forward(self, logits, targets):
-        bce   = F.binary_cross_entropy_with_logits(
-                    logits, targets, pos_weight=self.pos_weight, reduction='none')
-        pt    = torch.exp(-bce)
-        focal = (1 - pt) ** self.gamma * bce
-        return focal.mean()
+**Awaiting final evaluation.** No real PTB-XL training or held-out evaluation is included in this revision. Synthetic fixture metrics validate the software only and are never presented as model performance.
+
+The generated run directory is the deployable model bundle:
+
+```text
+artifacts/ptbxl-resnet1d-v1/
+  best_model.pt                 # inference weights + architecture identity
+  last_checkpoint.pt            # interrupted-training recovery
+  model_metadata.json           # canonical serving contract; finalization marker
+  thresholds.json               # human-readable export of metadata thresholds
+  training_config.json
+  training_history.json
+  split_audit.json
+  development_waveform_hashes.json
+  validation_predictions.npz
+  evaluation_started.json       # created only by evaluation
+  test_predictions.npz          # created only by evaluation
+  metrics.json                  # created only by evaluation
+  curves.json                   # bounded plotting points, only after evaluation
+  plots/
+    learning_curves.png
+    class_distribution.png      # train + validation positive counts
+    roc_curves.png
+    precision_recall_curves.png
+    confusion_matrices.png
 ```
 
-| Paramètre | Valeur |
+Weights are SHA-256 bound to metadata, with strict architecture and class-order checks. Evaluation metrics/curves are also hash-bound. Hashes detect accidental mismatches, not malicious artifact forgery: load artifacts only from a trusted source. `torch.load(weights_only=True)` is used. Never copy old thresholds or metrics into a new run. The UI reads `/api/model`; changing `MODEL_DIR` and restarting selects the whole bundle atomically from the application's perspective.
+
+## 13. Application stack
+
+React 18 + Vite + Tailwind CSS, canvas waveforms, FastAPI + Pydantic, PyTorch, NumPy, WFDB, pandas and scikit-learn. SQLite/aiosqlite stores accounts and explicitly saved result summaries. JWT/bcrypt preserve the original pragmatic authentication architecture.
+
+## 14. API
+
+Interactive schema: `http://localhost:8000/docs`.
+
+| Endpoint | Behavior |
 |---|---|
-| gamma | 2 |
-| pos_weight CD | 3.4527 |
-| pos_weight HYP | 7.2116 |
-| pos_weight MI | 2.9848 |
-| pos_weight NORM | 1.2922 |
-| pos_weight STTC | 3.1580 |
-| Optimiseur | Adam, lr = 1e-3 |
-| Scheduler | ReduceLROnPlateau, patience = 2 |
-
----
-
-## Pipeline d'entraînement
-
-### Gestion du déséquilibre de classes
-
-Deux mécanismes complémentaires sont déployés :
-
-**WeightedRandomSampler** : chaque exemple reçoit un poids inversement proportionnel à la fréquence de ses classes positives. Le DataLoader rééquilibre ainsi la représentation de chaque classe à chaque époque.
-
-**pos_weight dans la Focal Loss** : pour chaque classe `c`, `pos_weight[c] = (N - N_c) / N_c`, ce qui pénalise davantage les faux négatifs sur les classes rares.
-
-### Évolution de la perte
-
-| Époque | Train Loss | Val Loss |
-|---|---|---|
-| 1 | 0.4173 | 0.3504 |
-| 2 | 0.3559 | 0.3131 |
-| 3 | 0.3334 | 0.3181 |
-| 4 | 0.3221 | 0.3320 |
-| 5 | 0.3166 | 0.2871 |
-| 6 | 0.3044 | 0.2821 |
-| 7 | 0.3011 | 0.2779 |
-| **8** | **0.2911** | **0.2766** |
-| 9 | 0.2880 | 0.2820 |
-| 10 | 0.2815 | 0.2822 |
-
-La perte de validation minimale (0.2766) est atteinte à l'époque 8. Le scheduler réduit automatiquement le taux d'apprentissage lorsque la validation stagne.
-
-### Sauvegarde du checkpoint
-
-```python
-torch.save({
-    "model_state": model.state_dict(),
-    "thresholds":  best_thresholds,   # seuils optimisés par classe
-    "classes":     class_names
-}, "ecg_full_model.pth")
-```
-
----
-
-## Évaluation et métriques
-
-### Seuils de décision optimisés
-
-Pour chaque classe, le seuil optimal est déterminé par recherche sur la grille [0.1, 0.9] (pas = 0.05) en maximisant le score F1 sur l'ensemble de test.
-
-| Classe | Nom complet | Seuil optimal |
-|---|---|:---:|
-| NORM | ECG Normal | 0.55 |
-| MI | Infarctus du Myocarde | 0.45 |
-| CD | Trouble de la Conduction | 0.70 |
-| HYP | Hypertrophie | 0.65 |
-| STTC | Modification ST/T | 0.65 |
-
-### AUC-ROC par classe
-
-| Classe | AUC |
-|---|---|
-| NORM | 0.938 |
-| MI | 0.927 |
-| STTC | 0.926 |
-| HYP | 0.899 |
-| CD | 0.897 |
-| **Macro AUC** | **0.917** |
-
-### Rapport de classification complet (fold 10, 2 198 enregistrements)
-
-| Classe | Précision | Rappel | F1-Score | Support |
-|---|:---:|:---:|:---:|:---:|
-| CD | 0.79 | 0.67 | 0.73 | 496 |
-| HYP | 0.59 | 0.59 | 0.59 | 262 |
-| MI | 0.67 | 0.84 | 0.74 | 550 |
-| NORM | 0.81 | 0.89 | 0.85 | 963 |
-| STTC | 0.71 | 0.79 | 0.75 | 521 |
-| Micro avg | 0.74 | 0.79 | 0.76 | 2 792 |
-| Macro avg | 0.71 | 0.76 | 0.73 | 2 792 |
-| Weighted avg | 0.74 | 0.79 | 0.76 | 2 792 |
-| Samples avg | 0.75 | 0.80 | 0.75 | 2 792 |
-
-### Matrices de confusion (OvR par classe)
-
-| Classe | VP | FP | FN | VN |
-|---|:---:|:---:|:---:|:---:|
-| CD | 334 | 91 | 162 | 1 611 |
-| HYP | 154 | 107 | 108 | 1 829 |
-| MI | 461 | 230 | 89 | 1 418 |
-| NORM | 854 | 196 | 109 | 1 039 |
-| STTC | 412 | 171 | 109 | 1 506 |
-
-MI et NORM affichent le meilleur rappel (0.84 et 0.89), confirmant que le modèle détecte bien les infarctus et les ECG normaux. HYP reste la classe la plus difficile (F1 = 0.59) en raison de sa sous-représentation et de la proximité de ses patterns avec d'autres pathologies.
-
----
-
-## Backend — API FastAPI
-
-### Endpoints
-
-| Méthode | Endpoint | Auth | Description |
-|---|---|:---:|---|
-| POST | `/api/auth/register` | Non | Inscription (username, email, password) |
-| POST | `/api/auth/login` | Non | Connexion — retourne un token JWT |
-| POST | `/api/predict/` | Oui | Inférence ECG — signal JSON (1000 × 12) |
-| GET | `/api/history/` | Oui | Liste des analyses passées |
-| DELETE | `/api/history/{id}` | Oui | Suppression d'un enregistrement |
-| GET | `/api/stats/` | Oui | Statistiques agrégées par utilisateur |
-
-### Stack technique
-
-| Composant | Technologie | Rôle |
-|---|---|---|
-| Serveur ASGI | FastAPI + Uvicorn | Serveur HTTP asynchrone |
-| Base de données | SQLite + aiosqlite | Persistance des analyses et utilisateurs |
-| Hachage mot de passe | bcrypt (passlib) | Stockage sécurisé |
-| Authentification | JWT (python-jose) | Tokens expirables signés |
-| Inférence | PyTorch (singleton) | Chargement unique du checkpoint |
-| Validation données | Pydantic v2 | Schémas requêtes / réponses |
-
-### Pipeline d'inférence
-
-1. Réception JSON `{signal_data: [[float × 12] × 1000], patient_name, age, sex}`
-2. Conversion en tenseur PyTorch float32
-3. Transposition `(1000, 12)` → `(12, 1000)`, ajout dimension batch
-4. Passe forward sans gradient (`torch.no_grad()`)
-5. Application de sigmoid → probabilités [0, 1]
-6. Application des seuils par classe → labels binaires
-7. Construction de la réponse JSON structurée
-
----
-
-## Frontend — React / Vite / TailwindCSS
-
-| Page / Composant | Fichier | Fonction |
-|---|---|---|
-| Page d'accueil | `HomePage.jsx` | Landing page présentant le projet |
-| Connexion | `LoginPage.jsx` | Formulaire JWT |
-| Inscription | `RegisterPage.jsx` | Création de compte |
-| Analyse ECG | `PredictPage.jsx` | Upload / saisie JSON + résultats |
-| Dashboard | `DashboardPage.jsx` | Métriques du modèle + graphiques |
-| Historique | `HistoryPage.jsx` | Tableau des analyses avec suppression |
-| Layout | `Layout.jsx` | Sidebar + outlet React Router |
-| Carte résultat | `ResultCard.jsx` | Probabilités + labels par classe |
-| Client API | `utils/api.js` | Axios centralisé avec token JWT injecté |
-| Contexte Auth | `hooks/useAuth.jsx` | Provider React, gestion token/profil |
-
----
-
-## Prérequis
-
-- Python >= 3.9
-- Node.js >= 18
-- Docker et Docker Compose (pour le démarrage conteneurisé)
-- Checkpoint du modèle : `ecg_full_model.pth`
-
-> Sans checkpoint, l'API fonctionne en mode démo avec des poids aléatoires — tous les endpoints restent disponibles mais les prédictions sont aléatoires.
-
----
-
-## Installation et démarrage rapide
-
-### 1. Backend (FastAPI)
-
-```bash
-cd backend
-
-# Créer et activer l'environnement virtuel
-python -m venv venv
-source venv/bin/activate        # Windows : venv\Scripts\activate
-
-# Installer les dépendances
-pip install -r requirements.txt
-
-# Copier le checkpoint du modèle entraîné
-cp /chemin/vers/ecg_full_model.pth app/model/ecg_full_model.pth
-
-# Lancer l'API
-uvicorn app.main:app --reload --port 8000
-```
-
-API disponible sur `http://localhost:8000`  
-Documentation interactive sur `http://localhost:8000/docs`
-
-### 2. Frontend (React + Vite)
-
-```bash
-cd frontend
-
-npm install
-npm run dev
-```
-
-Application disponible sur `http://localhost:5173`
-
----
-
-## Démarrage avec Docker
-
-```bash
-# Depuis la racine du projet
-cp votre_modele.pth backend/app/model/ecg_full_model.pth
-
-docker-compose up --build
-```
-
-| Service | URL |
-|---|---|
-| Frontend | http://localhost:5173 |
-| Backend | http://localhost:8000 |
-| API Docs | http://localhost:8000/docs |
-
----
-
-## Référence API
-
-### Authentification
-
-```bash
-# Inscription
-curl -X POST http://localhost:8000/api/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{"username":"demo","email":"demo@example.com","password":"secret123"}'
-
-# Connexion
-curl -X POST http://localhost:8000/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"username":"demo","password":"secret123"}'
-```
-
-### Prédiction
-
-```bash
-# Générer un signal de test
-python3 -c "
-import numpy as np, json
-sig = np.random.randn(1000, 12).tolist()
-print(json.dumps({'signal_data': sig, 'patient_name': 'Patient Test', 'age': 55, 'sex': 'M'}))
-" > test_payload.json
-
-curl -X POST http://localhost:8000/api/predict/ \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer VOTRE_TOKEN" \
-  -d @test_payload.json
-```
-
-Exemple de réponse :
+| `GET /health`, `/api/health` | HTTP 200 when model ready, 503 when unavailable |
+| `GET /api/model` | Safe metadata, actual evaluated metrics if present; works without model |
+| `POST /api/predict/` | JSON inference; anonymous by default, never implicitly stored |
+| `POST /api/predict/validate-file` | Multipart upload → validated canonical JSON, no inference/storage |
+| `POST /api/predict/file` | Multipart JSON/CSV/NPY inference |
+| `POST /api/auth/register`, `/api/auth/login` | Account + token |
+| `GET /api/history/`, `DELETE /api/history/{id}` | Authenticated, owner-only results |
+| `GET /api/stats/` | Authenticated summary of explicitly saved results |
+
+Canonical JSON request:
 
 ```json
 {
-  "id": 1,
-  "predictions": [
-    {"class": "NORM", "description": "ECG Normal",             "probability": 0.92, "positive": true},
-    {"class": "MI",   "description": "Infarctus du Myocarde", "probability": 0.08, "positive": false},
-    {"class": "CD",   "description": "Trouble de Conduction", "probability": 0.03, "positive": false},
-    {"class": "HYP",  "description": "Hypertrophie",          "probability": 0.11, "positive": false},
-    {"class": "STTC", "description": "Modification ST/T",     "probability": 0.07, "positive": false}
-  ],
-  "top_class": "NORM",
-  "confidence": 0.92,
-  "positive_classes": ["NORM"],
-  "patient_name": "Patient Test",
-  "age": 55,
-  "sex": "M"
+  "signal_data": [["1000 rows, each containing 12 numeric mV values"]],
+  "leads": ["I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6"],
+  "sample_rate": 100,
+  "units": "mV",
+  "case_id": "DEMO-001",
+  "save_history": false
 }
 ```
 
-### Historique et statistiques
+The `signal_data` line above explains the shape; generate a complete valid payload with `node scripts/export_demo.mjs`. Then:
 
-```bash
-TOKEN="votre_token_jwt"
-
-curl http://localhost:8000/api/history/          -H "Authorization: Bearer $TOKEN"
-curl http://localhost:8000/api/stats/            -H "Authorization: Bearer $TOKEN"
-curl -X DELETE http://localhost:8000/api/history/1 -H "Authorization: Bearer $TOKEN"
+```powershell
+curl.exe -X POST http://localhost:8000/api/predict/ -H "Content-Type: application/json" --data-binary @artifacts/demo/synthetic_demo.json
 ```
 
----
+Accepted uploads: JSON array or `signal_data` object; CSV with exact canonical lead-name header or numeric rows; numeric NPY `(1000, 12)` with pickle disabled. Maximum file size is 2 MiB. Headerless CSV/NPY/raw JSON declare the documented standard order, 100 Hz and mV; the API warns when lead metadata is absent. Named lead permutations, strings, NaN/Inf, missing/flat leads, transposed arrays, unsupported rate/duration/units and extreme amplitudes are rejected rather than silently transformed. Old JSON `signal_data` requests remain accepted when canonical; demographic fields are no longer stored.
 
-## Export de signal depuis Python
+Responses include all five ordered class scores, thresholds, positive flags, model version, basic signal quality, preprocessing provenance and warnings. NORM and abnormal superclasses may cross their thresholds simultaneously; these independent multilabel outputs are preserved and flagged explicitly.
 
-```python
-import numpy as np, json, requests
+## 15. Local setup
 
-# X_test[0] a la forme (1000, 12)
-signal = X_test[0]
+PowerShell, from the repository root:
 
-# Méthode 1 : sauvegarder en JSON pour l'uploader frontend
-with open("sample_signal.json", "w") as f:
-    json.dump(signal.tolist(), f)
-
-# Méthode 2 : envoyer directement via POST
-r = requests.post(
-    "http://localhost:8000/api/predict/",
-    json={
-        "signal_data": signal.tolist(),
-        "patient_name": "Patient A",
-        "age": 62,
-        "sex": "F"
-    },
-    headers={"Authorization": "Bearer VOTRE_TOKEN"}
-)
-print(r.json())
+```powershell
+py -3.12 -m venv .venv
+.venv\Scripts\python.exe -m pip install -r requirements.txt
+Copy-Item .env.example .env
+.venv\Scripts\python.exe -m uvicorn app.main:app --app-dir backend --env-file .env --reload --port 8000
 ```
 
----
+If Python 3.12 is not installed, install it first. This workspace's setup used `uv venv --python 3.12 .venv`. To use the training commands verbatim without PowerShell activation-policy changes, set the current session's PATH:
 
-## Variables d'environnement
+```powershell
+$env:Path = "$PWD\.venv\Scripts;$env:Path"
+```
 
-### Backend
+In a second terminal:
 
-| Variable | Valeur par défaut | Description |
-|---|---|---|
-| `SECRET_KEY` | `change-me-in-production-...` | Clé de signature JWT |
-| `DB_PATH` | `cardioscan.db` | Chemin vers la base SQLite |
-| `MODEL_PATH` | `app/model/ecg_full_model.pth` | Chemin vers le checkpoint |
+```powershell
+cd frontend
+npm.cmd ci
+npm.cmd run dev
+```
 
-### Frontend
+On Linux/macOS use `python3.12 -m venv .venv`, `source .venv/bin/activate`, and `npm` in place of `npm.cmd`. For serving only, install `backend/requirements.txt` instead of the larger root training requirements. Run the backend from the repository root so the shared `training` package is importable.
 
-| Variable | Valeur par défaut | Description |
-|---|---|---|
-| `VITE_API_URL` | `http://localhost:8000` | URL de base de l'API |
+Environment variables: `MODEL_DIR` (default `artifacts/ptbxl-resnet1d-v1`), `MODEL_DEVICE=cpu|auto|cuda` (default CPU), `MODEL_THREADS=4`, `DB_PATH`, `CORS_ORIGINS`, `APP_ENV`, `SECRET_KEY`. Vite proxies `/api` to port 8000; `VITE_DEV_PROXY_TARGET` overrides the target, and `VITE_API_URL` can select an explicit API origin at build time.
 
----
+Without a trained artifact, health correctly returns 503 and prediction remains unavailable. The UI, metadata endpoint, upload validation and accounts remain usable. No random-weight fallback exists.
 
-## Suggestions de déploiement
+Production mode requires a generated, non-placeholder `SECRET_KEY` of at least 32 characters. Generate one with `python -c "import secrets; print(secrets.token_urlsafe(48))"`. Development uses a random ephemeral key when none is configured, so sessions expire on restart. Anonymous predictions are never saved; authenticated predictions are saved only with `save_history=true`. Old database history is preserved in its legacy table and not mixed into the new UI. Protect and back up the database appropriately; the application makes no compliance claim. Public internet deployment also requires HTTPS, rate limiting and operational access controls; this is a local portfolio deployment baseline.
 
-| Service | Notes |
-|---|---|
-| **Render** | Déployer le backend comme Web Service Docker. Tier gratuit disponible. |
-| **Railway** | `railway up` depuis le dossier backend. Détecte le Dockerfile automatiquement. |
-| **Vercel** | Déployer le dossier `frontend/`. Configurer `VITE_API_URL`. |
-| **Fly.io** | Idéal pour le backend PyTorch — disque persistant pour DB + modèle. |
+## 16. Docker
 
----
+`docker compose up --build` serves a production frontend build through nginx on `http://localhost:5173`, proxying `/api` to FastAPI. Artifacts mount read-only from `./artifacts`, and SQLite uses a named volume. The default mode is local development for account-secret handling; to use production mode, set `APP_ENV=production` and a generated `SECRET_KEY` in `.env`. Missing/placeholder keys then prevent startup. No Vite development server is used in the production frontend container.
 
-## Licence
+For frontend hot reload, use `docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build`. No cloud infrastructure or remote deployment is performed by these commands.
 
-Ce projet est distribué sous licence libre. Consultez le fichier [LICENSE.txt](./LICENSE.txt) pour plus de détails.
+## 17. Repository structure
 
----
+```text
+training/          canonical data, preprocessing, model, train/evaluate and artifacts
+backend/app/       FastAPI routes, authentication, artifact-based inference
+frontend/src/      React workstation, waveform viewer, provenance and history
+tests/             synthetic ML and API regression tests
+scripts/           synthetic pipeline smoke and demo export
+notebooks/         EDA guidance only
+archive/legacy/    retired runtime, notebook, reports and samples (not current evidence)
+docs/images/       portfolio screenshots
+MODEL_CARD.md      intended use, evaluation and limitations
+PORTFOLIO.md       About fields and demo checklist
+```
 
-> **Avertissement :** Cet outil est destiné à des fins de recherche et d'aide à la décision. Il ne remplace pas le diagnostic d'un professionnel de santé qualifié.
+## 18. Reproducibility
+
+Python/NumPy/PyTorch/CUDA RNGs are seeded, deterministic PyTorch algorithms are required, cuDNN benchmarking is disabled and workers receive deterministic seeds. Exact reproducibility is expected on the same software/hardware configuration, not across arbitrary devices or library releases. Metadata records the seed, architecture, normalization, best epoch, dataset fingerprint, software versions, git commit and dirty-worktree flag. Commit reviewed code before the definitive training run.
+
+Dependencies are resolved into pinned root and backend requirements; source constraints are in `requirements-*.in`. Frontend `package-lock.json` is committed. CPU fixtures require no dataset download:
+
+```powershell
+python -m pytest -q
+python -m scripts.smoke --output artifacts/smoke-check
+npm.cmd --prefix frontend run lint
+npm.cmd --prefix frontend run build
+```
+
+Choose a fresh directory for each smoke run. CI runs unit/API tests, frontend lint and build; never full PTB-XL training. Optional Make targets mirror these commands.
+
+CI and Docker use `scripts/install_cpu.py`, which reads the pinned PyTorch version and installs its official CPU wheel before the remaining requirements. For optional browser checks, start the backend without a model, then run `cd frontend`, `npx playwright install chromium`, and `npx playwright test`. On Windows with Edge installed, `$env:PW_CHANNEL='msedge'` avoids a Chromium download. These tests capture `docs/images/workstation.png` and check the mobile layout. They expect a missing-model state.
+
+## 19. Limitations
+
+PTB-XL reflects particular historical acquisition settings and populations. Labels may be noisy or ambiguous; device/site/demographic shift can affect outputs. No prospective, external or subgroup clinical validation is claimed. Prevalence affects precision and validation-selected thresholds may not transfer. The project does not identify every rhythm disorder or replace expert waveform review. Independent NORM/abnormal outputs may conflict. A negative superclass flag cannot establish absence of disease. Basic input checks cannot detect all electrode swaps, artifact or unit mislabeling.
+
+## 20. Medical / research disclaimer
+
+Research prototype — not a medical device and not intended for clinical diagnosis or emergency decision-making. Performance on PTB-XL does not establish clinical effectiveness. No FDA/CE approval, clinical-grade accuracy, cardiologist equivalence or privacy-regulation compliance is claimed.
+
+## 21. Dataset citation / license
+
+PTB-XL v1.0.3 is distributed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Attribute the dataset creators when using recordings or derived results. Dataset data are not bundled in this repository.
+
+- Wagner, P., Strodthoff, N., Bousseljot, R., Samek, W., & Schaeffter, T. (2022). *PTB-XL, a large publicly available electrocardiography dataset*, version 1.0.3. PhysioNet. [doi:10.13026/kfzx-aw45](https://doi.org/10.13026/kfzx-aw45).
+- Wagner et al. (2020). *PTB-XL, a large publicly available electrocardiography dataset*. Scientific Data 7, 154. [doi:10.1038/s41597-020-0495-6](https://doi.org/10.1038/s41597-020-0495-6).
+- Strodthoff et al. (2021). *Deep Learning for ECG Analysis: Benchmarks and Insights from PTB-XL*. IEEE JBHI 25(5), 1519–1528. [doi:10.1109/JBHI.2020.3022989](https://doi.org/10.1109/JBHI.2020.3022989).
+- Goldberger et al. (2000). *PhysioBank, PhysioToolkit, and PhysioNet*. Circulation 101(23), e215–e220. [doi:10.1161/01.CIR.101.23.e215](https://doi.org/10.1161/01.CIR.101.23.e215).
+
+The existing [LICENSE.txt](LICENSE.txt) is preserved. No additional rights over the dataset are implied.
+
+## 22. Future work
+
+External dataset evaluation, subgroup analysis, dedicated calibration assessment, validated signal-quality detection, explainability with appropriate caveats, and a paired WFDB upload adapter. These are future investigations, not capabilities or validations already completed.

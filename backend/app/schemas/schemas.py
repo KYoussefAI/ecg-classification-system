@@ -1,90 +1,58 @@
-"""
-Pydantic schemas for request validation and response serialisation.
-"""
-
-from __future__ import annotations
-
 from typing import Any
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
-
-# ── Auth ──────────────────────────────────────────────────────────────────────
 
 class RegisterRequest(BaseModel):
-    username: str = Field(..., min_length=3, max_length=50)
-    email:    EmailStr
-    password: str = Field(..., min_length=6)
+    username: str = Field(min_length=3, max_length=50)
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=72)
+
+    @field_validator("password")
+    @classmethod
+    def password_bytes(cls, value):
+        if len(value.encode()) > 72:
+            raise ValueError("Password may contain at most 72 UTF-8 bytes")
+        return value
 
 
 class LoginRequest(BaseModel):
-    username: str
-    password: str
+    username: str = Field(max_length=50)
+    password: str = Field(max_length=72)
 
 
 class TokenResponse(BaseModel):
     access_token: str
-    token_type:   str = "bearer"
-    username:     str
-    email:        str
+    token_type: str = "bearer"
+    username: str
+    email: str
 
-
-# ── Prediction ────────────────────────────────────────────────────────────────
 
 class PredictionRequest(BaseModel):
-    """
-    The frontend sends ECG signal data as a flat list or nested list.
-
-    signal_data: list of 1000 timesteps × 12 leads  →  shape (1000, 12)
-                 Either a flat list of 12000 floats or a list of 1000 lists of 12 floats.
-    patient_name: optional label stored with the record
-    age:          patient age (stored, not used by model)
-    sex:          patient sex  (stored, not used by model)
-    """
-    signal_data:  list[Any]  = Field(..., description="ECG signal (1000×12)")
-    patient_name: str | None = Field(None, max_length=100)
-    age:          int | None = Field(None, ge=0, le=130)
-    sex:          str | None = Field(None, pattern="^(M|F|male|female|Male|Female)?$")
+    signal_data: list[Any] = Field(max_length=1000)
+    case_id: str | None = Field(None, max_length=100)
+    leads: list[str] | None = None
+    sample_rate: float = 100
+    units: str = "mV"
+    save_history: bool = False
+    synthetic: bool = False
 
 
 class ClassPrediction(BaseModel):
-    class_name:  str   = Field(..., alias="class")
+    class_name: str = Field(alias="class")
     description: str
-    probability: float
-    positive:    bool
-
-    class Config:
-        populate_by_name = True
+    score: float = Field(ge=0, le=1)
+    threshold: float = Field(ge=0, le=1)
+    positive: bool
 
 
 class PredictionResponse(BaseModel):
-    id:               int | None = None
-    predictions:      list[dict]
-    top_class:        str
-    confidence:       float
+    id: int | None = None
+    case_id: str | None = None
+    created_at: str | None = None
+    model_version: str
+    predictions: list[ClassPrediction]
     positive_classes: list[str]
-    patient_name:     str | None = None
-    age:              int | None = None
-    sex:              str | None = None
-    created_at:       str | None = None
-
-
-# ── History ───────────────────────────────────────────────────────────────────
-
-class HistoryEntry(BaseModel):
-    id:               int
-    patient_name:     str | None
-    age:              int | None
-    sex:              str | None
-    top_class:        str
-    confidence:       float
-    positive_classes: list[str]
-    created_at:       str
-
-
-# ── Stats ─────────────────────────────────────────────────────────────────────
-
-class StatsResponse(BaseModel):
-    total_predictions: int
-    class_distribution: dict[str, int]
-    avg_confidence:     float
-    recent_trend:       list[dict]  # [{date, count}]
+    signal_quality: dict
+    preprocessing: dict
+    warnings: list[str]
+    disclaimer: str

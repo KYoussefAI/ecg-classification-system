@@ -1,118 +1,109 @@
-"""
-Prediction route.
-POST /api/predict
-  • Accepts ECG signal as JSON array OR file (.npy)
-  • Runs inference via ModelService
-  • Persists result to DB if user is authenticated
-"""
-
 import json
-import logging
-import numpy as np
-
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-
 from app.database import get_db
 from app.schemas.schemas import PredictionRequest, PredictionResponse
-from app.services.model_service import ModelService
 from app.services.auth_service import decode_token
+from app.services.input_service import MAX_UPLOAD_BYTES, parse_file
+from app.services.model_service import ModelService, ModelUnavailable
 
-logger = logging.getLogger(__name__)
 router = APIRouter()
-bearer_scheme = HTTPBearer(auto_error=False)
+bearer = HTTPBearer(auto_error=False)
 
 
-def _parse_signal(raw: list) -> np.ndarray:
-    """Convert JSON signal payload to numpy array of shape (1000, 12)."""
-    arr = np.array(raw, dtype=np.float32)
-
-    if arr.ndim == 1:
-        if arr.size != 12000:
-            raise ValueError(f"Flat signal must have 12000 values, got {arr.size}")
-        arr = arr.reshape(1000, 12)
-
-    elif arr.ndim == 2:
-        if arr.shape == (12, 1000):
-            arr = arr.T
-        elif arr.shape != (1000, 12):
-            raise ValueError(f"2-D signal must be (1000,12) or (12,1000), got {arr.shape}")
-
-    else:
-        raise ValueError(f"Signal must be 1-D or 2-D, got {arr.ndim}-D")
-
-    return arr
+async def execute_prediction(body, db, credentials):
+    user_id = None
+    if credentials:
+        payload = decode_token(credentials.credentials)
+        if not payload:
+            raise HTTPException(401, "Invalid or expired token")
+        row = await db.execute(
+            "SELECT id FROM users WHERE username=?", (payload["sub"],)
+        )
+        user = await row.fetchone()
+        if not user:
+            raise HTTPException(401, "Unknown account")
+        user_id = user["id"]
+    if body.save_history and user_id is None:
+        raise HTTPException(401, "Sign in to explicitly save a de-identified result")
+    try:
+        result = await run_in_threadpool(
+            ModelService.get_instance().predict,
+            body.signal_data,
+            leads=body.leads,
+            sample_rate=body.sample_rate,
+            units=body.units,
+        )
+    except ModelUnavailable as exc:
+        raise HTTPException(503, str(exc)) from exc
+    except (ValueError, TypeError, OverflowError) as exc:
+        raise HTTPException(422, str(exc)) from exc
+    result.update({"id": None, "case_id": body.case_id, "created_at": None})
+    if body.synthetic:
+        result["warnings"].insert(
+            0, "Synthetic input: these outputs have no patient interpretation."
+        )
+    if body.save_history:
+        cursor = await db.execute(
+            "INSERT INTO screening_results (user_id, case_id, model_version, result) VALUES (?, ?, ?, ?)",
+            (user_id, body.case_id, result["model_version"], json.dumps(result)),
+        )
+        await db.commit()
+        result["id"] = cursor.lastrowid
+        row = await db.execute(
+            "SELECT created_at FROM screening_results WHERE id=?", (cursor.lastrowid,)
+        )
+        result["created_at"] = (await row.fetchone())["created_at"]
+    return result
 
 
 @router.post("/", response_model=PredictionResponse)
 async def predict(
     body: PredictionRequest,
     db=Depends(get_db),
-    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
 ):
-    # ---- parse signal ----
+    return await execute_prediction(body, db, credentials)
+
+
+async def read_upload(file, sample_rate, units):
     try:
-        signal = _parse_signal(body.signal_data)
-    except Exception as e:
-        raise HTTPException(status_code=422, detail=str(e))
-
-
-    # ---- run model ----
-    try:
-        svc = ModelService.get_instance()
-        result = svc.predict(signal)
-    except Exception as e:
-        logger.exception("Model inference failed")
-        raise HTTPException(status_code=500, detail=f"Inference error: {e}")
-
-    # ---- optional: identify user ----
-    user_id = None
-    if credentials and credentials.credentials:
-        payload = decode_token(credentials.credentials)
-        if payload:
-            row = await db.execute(
-                "SELECT id FROM users WHERE username=?", (payload["sub"],)
-            )
-            user_row = await row.fetchone()
-            if user_row:
-                user_id = user_row["id"]
-
-    patient_name = body.patient_name
-    age = body.age
-    sex = body.sex
-
-    # ---- save prediction ----
-    cursor = await db.execute(
-        """
-        INSERT INTO predictions
-          (user_id, patient_name, age, sex, signal_shape, predictions, top_class, confidence)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            user_id,
-            patient_name,
-            age,
-            sex,
-            str(signal.shape),
-            json.dumps(result["predictions"]),
-            result["top_class"],
-            result["confidence"],
+        return parse_file(
+            await file.read(MAX_UPLOAD_BYTES + 1), file.filename, sample_rate, units
         )
-    )
-    await db.commit()
-    record_id = cursor.lastrowid
+    except (ValueError, KeyError, TypeError, EOFError, OverflowError) as exc:
+        raise HTTPException(422, str(exc)) from exc
+    finally:
+        await file.close()
 
-    row = await db.execute("SELECT created_at FROM predictions WHERE id=?", (record_id,))
-    saved = await row.fetchone()
 
-    return PredictionResponse(
-        id=record_id,
-        predictions=result["predictions"],
-        top_class=result["top_class"],
-        confidence=result["confidence"],
-        positive_classes=result["positive_classes"],
-        patient_name=patient_name,
-        age=age,
-        sex=sex,
-        created_at=saved["created_at"] if saved else None,
+@router.post("/validate-file")
+async def validate_file(
+    file: UploadFile = File(...),
+    sample_rate: float = Form(100),
+    units: str = Form("mV"),
+):
+    return await read_upload(file, sample_rate, units)
+
+
+@router.post("/file", response_model=PredictionResponse)
+async def predict_file(
+    file: UploadFile = File(...),
+    sample_rate: float = Form(100),
+    units: str = Form("mV"),
+    case_id: str | None = Form(None, max_length=100),
+    save_history: bool = Form(False),
+    db=Depends(get_db),
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
+):
+    parsed = await read_upload(file, sample_rate, units)
+    body = PredictionRequest(
+        **{
+            k: parsed[k]
+            for k in ("signal_data", "leads", "sample_rate", "units", "synthetic")
+        },
+        case_id=case_id,
+        save_history=save_history,
     )
+    return await execute_prediction(body, db, credentials)

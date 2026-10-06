@@ -59,3 +59,18 @@ Thumbs.db
 # MISC
 # =========================
 *.log
+data/
+datasets/
+artifacts/
+*.npz
+*.dat
+*.hea
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.db-*
+.env.*
+!.env.example
+playwright-report/
+test-results/

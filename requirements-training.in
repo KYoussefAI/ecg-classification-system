@@ -1,0 +1,8 @@
+-r requirements-serving.in
+pandas>=2.2,<3
+matplotlib>=3.10,<4
+wfdb>=4.2,<5
+scikit-learn>=1.7,<2
+pytest>=8.3,<10
+httpx>=0.28,<1
+httpx2>=2.13,<3

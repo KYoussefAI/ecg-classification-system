@@ -1,0 +1,13 @@
+.git
+.venv
+**/node_modules
+**/dist
+data
+datasets
+artifacts
+archive
+**/__pycache__
+.env
+*.db
+*.pt
+*.pth

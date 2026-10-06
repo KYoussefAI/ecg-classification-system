@@ -1,0 +1,13 @@
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile.dev
+    volumes:
+      - ./frontend:/workspace
+      - frontend_modules:/workspace/node_modules
+    environment:
+      VITE_DEV_PROXY_TARGET: http://backend:8000
+    command: npm run dev -- --host 0.0.0.0 --port 80
+volumes:
+  frontend_modules:

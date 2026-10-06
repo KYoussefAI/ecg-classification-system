@@ -1,35 +1,23 @@
-version: "3.9"
-
 services:
   backend:
-    build: ./backend
-    container_name: cardioscan-api
-    ports:
-      - "8000:8000"
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    ports: ["8000:8000"]
     environment:
-      - SECRET_KEY=change-me-in-production
-      - DB_PATH=/data/cardioscan.db
-      - MODEL_PATH=/app/app/model/ecg_full_model.pth
+      APP_ENV: ${APP_ENV:-development}
+      SECRET_KEY: ${SECRET_KEY:-}
+      MODEL_DIR: ${MODEL_DIR:-/workspace/artifacts/ptbxl-resnet1d-v1}
+      MODEL_DEVICE: cpu
+      DB_PATH: /data/cardioscan.db
     volumes:
       - db_data:/data
-      - ./backend/app/model:/app/app/model   # mount your .pth here
-    restart: unless-stopped
-
+      - ./artifacts:/workspace/artifacts:ro
   frontend:
-    image: node:20-alpine
-    container_name: cardioscan-ui
-    working_dir: /app
-    volumes:
-      - ./frontend:/app
-    ports:
-      - "5173:5173"
-    environment:
-      # Browser calls /api on the Vite host; proxy forwards to the backend service.
-      - VITE_DEV_PROXY_TARGET=http://backend:8000
-    command: sh -c "npm install && npm run dev -- --host"
-    depends_on:
-      - backend
-    restart: unless-stopped
-
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    ports: ["5173:80"]
+    depends_on: [backend]
 volumes:
   db_data:

@@ -1,0 +1,9 @@
+fastapi>=0.115,<1
+uvicorn[standard]>=0.34,<1
+python-jose[cryptography]>=3.4,<4
+bcrypt>=4.3,<6
+pydantic[email]>=2.10,<3
+aiosqlite>=0.21,<1
+numpy>=2.2,<3
+python-multipart>=0.0.20,<1
+torch>=2.8,<3

@@ -29,19 +29,16 @@ async def init_db():
             )
         """)
 
+        # Separate schema preserves old history without presenting legacy scores
+        # as results from the new methodology. Raw waveforms are never stored.
         await db.execute("""
-            CREATE TABLE IF NOT EXISTS predictions (
-                id           INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id      INTEGER REFERENCES users(id),
-                patient_name TEXT,
-                age          INTEGER,
-                sex          TEXT,
-                signal_shape TEXT,
-                predictions  TEXT,   -- JSON array of {class, prob, positive}
-                top_class    TEXT,
-                confidence   REAL,
-                created_at   DATETIME DEFAULT CURRENT_TIMESTAMP
+            CREATE TABLE IF NOT EXISTS screening_results (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL REFERENCES users(id),
+                case_id TEXT,
+                model_version TEXT NOT NULL,
+                result TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         """)
-
         await db.commit()

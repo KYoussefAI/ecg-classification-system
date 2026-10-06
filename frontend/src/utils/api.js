@@ -1,55 +1,36 @@
-import axios from 'axios'
-
-// Empty default uses same-origin requests so Vite's /api proxy works in dev.
-// Set VITE_API_URL in production (e.g. https://api.example.com).
-const BASE_URL = import.meta.env.VITE_API_URL ?? ''
+import axios from "axios";
 
 const api = axios.create({
-  baseURL: BASE_URL,
+  baseURL: import.meta.env.VITE_API_URL ?? "",
   timeout: 60000,
-  headers: { 'Content-Type': 'application/json' },
-})
-
-// Attach JWT on every request
+});
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token')
-  if (token) config.headers.Authorization = `Bearer ${token}`
-  return config
-})
-
-// Handle 401 — clear token and redirect
-api.interceptors.response.use(
-  (res) => res,
-  (err) => {
-    if (err.response?.status === 401) {
-      localStorage.removeItem('token')
-      localStorage.removeItem('user')
-      window.location.href = '/login'
-    }
-    return Promise.reject(err)
-  }
-)
-
-// ── Auth ──────────────────────────────────────────────────────────────────────
+  const token = localStorage.getItem("token");
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
+});
+export function errorMessage(error) {
+  const detail = error.response?.data?.detail;
+  return typeof detail === "string"
+    ? detail
+    : Array.isArray(detail)
+      ? detail.map((x) => x.msg).join(" · ")
+      : "Could not reach the API. Check that the backend is running.";
+}
 export const authAPI = {
-  register: (data) => api.post('/api/auth/register', data),
-  login:    (data) => api.post('/api/auth/login',    data),
-}
-
-// ── Prediction ────────────────────────────────────────────────────────────────
+  register: (data) => api.post("/api/auth/register", data),
+  login: (data) => api.post("/api/auth/login", data),
+};
 export const predictAPI = {
-  predict: (data) => api.post('/api/predict/', data),
-}
-
-// ── History ───────────────────────────────────────────────────────────────────
+  predict: (data) => api.post("/api/predict/", data),
+  validate: (file) => {
+    const body = new FormData();
+    body.append("file", file);
+    return api.post("/api/predict/validate-file", body);
+  },
+};
 export const historyAPI = {
-  getAll:  (limit = 50)  => api.get(`/api/history/?limit=${limit}`),
-  remove:  (id)          => api.delete(`/api/history/${id}`),
-}
-
-// ── Stats ─────────────────────────────────────────────────────────────────────
-export const statsAPI = {
-  get: () => api.get('/api/stats/'),
-}
-
-export default api
+  getAll: () => api.get("/api/history/"),
+  remove: (id) => api.delete(`/api/history/${id}`),
+};
+export default api;
